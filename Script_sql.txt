@@ -1,0 +1,146 @@
+CREATE TABLE customers2 (
+    id         INTEGER,
+    fio        VARCHAR (100),
+    birth_date DATE,
+    sex        VARCHAR (10),
+    ad         INTEGER,
+    org_cnt    INTEGER 
+);
+insert into customers2
+select id, fio, date(birth_date) birth_date,
+       iif((substring(rtrim(fio), length(fio), 1)=='ч'), 'Мужчина', 'Женщина') sex,
+strftime('%Y', 'now') - strftime('%Y', birth_date) -
+case when strftime('%m', 'now') > strftime('%m', birth_date)
+or (strftime('%m', 'now') = strftime('%m', birth_date) and strftime('%d', 'now') >= strftime('%d', birth_date))
+then 0 else 1 end age, ord_cnt
+from customers left join
+(select customer_id, count(order_num) ord_cnt from orders where cancel_reason_id is null
+group by customer_id) tbl1
+on tbl1.customer_id = customers.id;
+
+CREATE TABLE order_rows2 (
+    order_num       VARCHAR (6),
+    sku_id          VARCHAR (6),
+    sku_name        VARCHAR (100),
+    category        VARCHAR (20),
+    collection      VARCHAR (20),
+    price           NUMBER (8, 2),
+    supplier_name   VARCHAR (20)
+);
+insert into order_rows2
+select o.order_num, o.sku_id, sku_name,
+case when substr(o.sku_id, 1, 2) = 'Д-' then 'Диван'
+when substr(o.sku_id, 1, 2) = 'К-' then 'Кресло'
+when substr(o.sku_id, 1, 2) = 'ДУ' then 'Диван угловой' else 0
+end category,
+case when substr(o.sku_id, instr(o.sku_id,'-')+1, 1) = 'Б' then 'Берг'
+when substr(o.sku_id, instr(o.sku_id,'-')+1, 1) = 'В' then 'Верона'
+when substr(o.sku_id, instr(o.sku_id,'-')+1, 1) = 'Д' then 'Динс'
+when substr(o.sku_id, instr(o.sku_id,'-')+1, 1) = 'М' then 'Магно'
+when substr(o.sku_id, instr(o.sku_id,'-')+1, 1) = 'С' then 'Спейс' else 0
+end collection, price, supplier_name
+from order_rows o left join sku s on o.sku_id = s.sku_id
+left join suppliers on suppliers.id=id_supplier;
+
+CREATE TABLE ozon (
+    order_num       VARCHAR (10),
+    skidka          NUMBER (8, 2) 
+);
+insert into ozon values 	("МСК-2098",	0.05	),
+	("МСК-2108",	0.05	),
+	("МСК-2133",	0.05	),
+	("МСК-2213",	0.05	),
+	("МСК-2218",	0.05	),
+	("СПБ-2177",	0.07	);
+
+CREATE TABLE orders2 (
+    order_num   VARCHAR (8),
+    order_date  DATE,
+    customer_id INTEGER,
+    source_name VARCHAR (15),
+    state       VARCHAR (15),
+    reason      VARCHAR (100),
+    city        VARCHAR (15),
+    num         INTEGER,
+    summa       NUMBER (8, 2),
+    skidka      NUMBER (8, 2) 
+);
+
+INSERT INTO orders2 SELECT ord.order_num,
+                           date(ord.order_date) order_date,
+                           ord.customer_id,
+                           os.source_name,
+                           ord.state,
+                           cr.reason,
+                           CASE WHEN substr(ord.order_num, 1, 3) = 'МСК' THEN 'Москва' WHEN substr(ord.order_num, 1, 3) = 'СПБ' THEN 'Санкт-Петербург' ELSE 0 END city,
+                           or3.num,
+                           or2.summa,
+                           ozon.skidka
+                      FROM orders ord
+                           LEFT JOIN
+                           order_sources os ON ord.source_id = os.id
+                           LEFT JOIN
+                           cancel_reasons cr ON ord.cancel_reason_id = cr.id
+                           LEFT JOIN
+                           ozon ON ord.order_num = ozon.order_num
+                           LEFT JOIN
+                           (
+                               SELECT order_num,
+                                      sum(price) summa
+                                 FROM order_rows2
+                                GROUP BY order_num
+                           )
+                           or2 ON ord.order_num = or2.order_num
+                           LEFT JOIN
+                           (
+                               SELECT order_num,
+                                      row_number() OVER (PARTITION BY customer_id ORDER BY order_date) num
+                                 FROM orders
+                                WHERE cancel_reason_id IS NULL
+                           )
+                           or3 ON ord.order_num = or3.order_num;
+
+ALTER TABLE orders2 ADD COLUMN discount INTEGER;
+
+ALTER TABLE orders2 ADD COLUMN discount2 INTEGER;
+
+ALTER TABLE orders2 ADD COLUMN real_sum NUMBER (8, 2);
+
+ALTER TABLE orders2 ADD COLUMN result NUMBER (8, 2);
+
+UPDATE orders2
+   SET discount2 = 250
+ WHERE num = 6;
+
+UPDATE orders2
+   SET discount = 500
+ WHERE num = 7;
+
+UPDATE orders2
+   SET discount = 1000
+ WHERE num = 8;
+
+UPDATE orders2
+   SET real_sum = summa
+ WHERE reason IS NULL;
+
+UPDATE orders2
+   SET discount = 0
+ WHERE discount IS NULL;
+
+UPDATE orders2
+   SET discount2 = 0
+ WHERE discount2 IS NULL;
+
+UPDATE orders2
+   SET skidka = 0
+ WHERE skidka IS NULL;
+
+UPDATE orders2
+   SET result = (real_sum - discount - discount2) * (1 - skidka);
+
+
+
+
+
+
